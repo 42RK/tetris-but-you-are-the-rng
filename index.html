@@ -307,6 +307,7 @@
        * - IMPROVED Local Fit: Added Row and Column Transition heuristics.
        * - GLOBAL Keydown: Keyboard works anywhere on page.
        * - UI UPDATE: Spacebar pause & "LOCKED IN" display.
+       * - FEATURE: "LOCKED IN" state persistence. Stores the plan!
        */
 
       // --- Configuration ---
@@ -441,6 +442,10 @@
       let gameOver = false;
       let animationId = null;
       let isPaused = false; // New Pause State
+      
+      // Locking State
+      let lockedMoves = [];
+      let isLocked = false;
 
       // AI State
       let aiTarget = null;
@@ -466,6 +471,10 @@
         isAiActing = false;
         aiTarget = null;
         isPaused = false; // Reset pause
+        
+        // Reset Lock
+        lockedMoves = [];
+        isLocked = false;
 
         // Get start level
         const select = document.getElementById("startLevel");
@@ -878,10 +887,11 @@
       }
 
       function beamSearch(initialGrid, pieceTypes, targetWellCol, currentMode) {
-        // Candidates: { grid, firstMove, score }
+        // Candidates: { grid, firstMove, score, path }
         let candidates = [{ 
            grid: initialGrid, 
-           firstMove: null, 
+           firstMove: null,
+           path: [], // Store the full path of moves
            score: -Infinity 
         }];
 
@@ -899,8 +909,6 @@
                     stepWeights = PANIC_WEIGHTS;
                 } else if (currentMode === "PLOTTING") {
                     // Smart Check: Is the well deep enough to EXECUTE?
-                    // We need to re-calculate well depth for *this* simulation grid
-                    // (simplified version of findBestMove logic)
                     let candColHeights = new Array(COLS).fill(0);
                     for(let x=0; x<COLS; x++) {
                        for(let y=0; y<ROWS; y++) {
@@ -938,10 +946,13 @@
                 for (const move of moves) {
                     const score = evaluateGrid(move.grid, stepWeights, stepWellCol);
                     
+                    // Create the move object to store
+                    const thisMove = { x: move.x, rotation: move.rotation };
+
                     nextCandidates.push({
                         grid: move.grid,
-                        // If it's the first depth, record the move. Otherwise propagate existing.
-                        firstMove: i === 0 ? { x: move.x, rotation: move.rotation } : cand.firstMove,
+                        firstMove: i === 0 ? thisMove : cand.firstMove,
+                        path: [...cand.path, thisMove], // Append move to path
                         score: cand.score !== -Infinity ? cand.score + score : score 
                     });
                 }
@@ -955,13 +966,33 @@
             if (candidates.length === 0) break;
         }
 
-        // Fallback: If simulation found no moves (all dead ends), return null to trigger random/simple fallback?
-        // Or better, handle in findBestMove. Here we return firstMove of top candidate.
-        return candidates.length > 0 ? candidates[0].firstMove : null;
+        // Return best candidate (with full path)
+        return candidates.length > 0 ? candidates[0] : null;
       }
 
       function findBestMove(grid, piece) {
         let bestMove = null;
+
+        // Check Locked Plan FIRST
+        if (isLocked && lockedMoves.length > 0) {
+            // Update UI to keep showing Locked In
+            const stateEl = document.getElementById("aiStateDisplay");
+            if(stateEl) {
+               stateEl.innerText = "LOCKED IN";
+               stateEl.className = "text-xs text-purple-500 font-mono font-bold uppercase animate-pulse";
+            }
+            
+            // Return next move from plan
+            const next = lockedMoves.shift();
+            // If plan empty after this, unlock
+            if (lockedMoves.length === 0) {
+                isLocked = false;
+            }
+            return next;
+        }
+        
+        // If empty plan, ensure unlocked
+        if (lockedMoves.length === 0) isLocked = false;
 
         // 1. Determine Board State & Weights
         let maxHeight = 0;
@@ -1027,19 +1058,52 @@
            if (mode === "PANIC") {
                stateEl.className = "text-xs text-red-500 font-mono font-bold uppercase animate-pulse";
            } else if (mode === "PLOTTING") {
-               stateEl.innerText = "LOCKED IN";
-               stateEl.className = "text-xs text-purple-500 font-mono font-bold uppercase animate-pulse";
+               stateEl.innerText = "PLOTTING...";
+               stateEl.className = "text-xs text-purple-400 font-mono font-bold uppercase";
            } else {
                stateEl.className = "text-xs text-blue-400 font-mono font-bold uppercase";
            }
         }
 
-        // 2. Perform Lookahead Beam Search on LIMITED Queue (Prevent Crash)
-        // We scan the FULL queue for strategy above, but limit actual move simulation to MAX_SIM_DEPTH
-        const piecesToLookAhead = [piece.type, ...pieceQueue].slice(0, MAX_SIM_DEPTH);
+        // 2. Perform Lookahead Beam Search
+        // We use the queue up to the I piece if PLOTTING, otherwise standard limited depth
+        let piecesToLookAhead = [];
+        
+        if (mode === "PLOTTING") {
+             // Simulate exactly until the I piece to capture the full Tetris plan
+             // Add 1 to include the I piece itself
+             piecesToLookAhead = [piece.type, ...pieceQueue.slice(0, iIndex + 1)];
+             // Cap strictly at something reasonable if queue is insanely long, but ensure we reach I if possible
+             // If I piece is very far (> 20), we might need to just play Calm until closer?
+             // But user wants deep plan. Let's cap at 25.
+             if (piecesToLookAhead.length > 25) {
+                 piecesToLookAhead = piecesToLookAhead.slice(0, 25);
+             }
+        } else {
+             // Standard behavior
+             piecesToLookAhead = [piece.type, ...pieceQueue].slice(0, MAX_SIM_DEPTH);
+        }
         
         if (piecesToLookAhead.length > 0) {
-             bestMove = beamSearch(grid, piecesToLookAhead, targetWellCol, mode);
+             const result = beamSearch(grid, piecesToLookAhead, targetWellCol, mode);
+             if (result) {
+                 bestMove = result.firstMove;
+                 
+                 // IF PLOTTING and we found a valid path, LOCK IT IN!
+                 if (mode === "PLOTTING") {
+                     // The path includes the current move as index 0.
+                     // We return index 0, and store 1..end in lockedMoves.
+                     if (result.path.length > 1) {
+                         lockedMoves = result.path.slice(1);
+                         isLocked = true;
+                         // UI update for immediate feedback
+                         if (stateEl) {
+                             stateEl.innerText = "LOCKED IN";
+                             stateEl.className = "text-xs text-purple-500 font-mono font-bold uppercase animate-pulse";
+                         }
+                     }
+                 }
+             }
         }
         
         // Fallback if deep search failed (e.g., immediate game over detected in all paths)
