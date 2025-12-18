@@ -328,8 +328,8 @@
       const BLOCK_SIZE = 24;
       const AI_THINK_DELAY = 50;
       const BEAM_WIDTH = 25; 
-      const MAX_SIM_DEPTH = 22; // Synced with Planning Horizon
-      const PLANNING_HORIZON = 22; // Don't look further than we can simulate
+      const MAX_SIM_DEPTH = 25; // Slight bump to handle deeper spam chains
+      const PLANNING_HORIZON = 30; // Look further for the right piece
 
       // Base speeds (ms per tick) mimicking NES curve somewhat adapted for AI animation
       // Level 0 is slow-ish, Level 9 is very snappy.
@@ -1061,46 +1061,57 @@
         let mode = "CALM";
         
         const isPanic = maxHeight > 12;
-        const iIndex = pieceQueue.indexOf("I");
-        
-        // STRATEGY UPDATE:
-        // Only plot if the I-piece is within the Simulation Horizon.
-        const hasLongboi = iIndex !== -1 && iIndex < PLANNING_HORIZON; 
         const isSafe = maxHeight < 14 && totalHoles < 5;
+
+        // ADVANCED TETRIS PLANNING
+        // We need to find an 'I' piece in the queue that arrives *after* we have enough
+        // blocks to build the well up to 4 high.
+        let targetIIndex = -1; // Index in the combined stream [current, ...queue]
 
         if (isPanic) {
             mode = "PANIC";
-        } else if (hasLongboi && isSafe) {
-            // Precise Volume Estimation
-            // 1. Calculate the 'Ceiling' of the non-well columns (highest point)
+        } else if (isSafe) {
+            // 1. Calculate the 'Ceiling' of the non-well columns
             let maxWallHeight = 0;
             for(let c=0; c<COLS; c++) {
                 if (c !== targetWellCol) maxWallHeight = Math.max(maxWallHeight, colHeights[c]);
             }
             
-            // 2. We want to build a wall that is at least 4 blocks higher than the well bottom
-            //    BUT also flat. So we target max(maxWallHeight, wellHeight + 4).
+            // 2. Target Height: At least 4 above the well floor, but also flat with current max height
             const targetHeight = Math.max(maxWallHeight, colHeights[targetWellCol] + 4);
             
-            // 3. Calculate empty space (volume needed) to make a solid rect up to targetHeight
+            // 3. Calculate "Volume Needed" (empty space to fill to reach targetHeight rectangle)
             let blocksNeeded = 0;
             for(let c=0; c<COLS; c++) {
                 if (c !== targetWellCol) {
-                    // Space needed to reach target height from current height
                     const needed = Math.max(0, targetHeight - colHeights[c]);
                     blocksNeeded += needed;
                 }
             }
             
-            // 4. Blocks available in queue before I arrives
-            const blocksAvailable = iIndex * 4;
+            // 4. Scan the full stream (Current Piece + Queue)
+            // We search for an 'I' piece that exists at a point where Cumulative Volume >= Needed
+            const fullStream = [piece.type, ...pieceQueue];
+            let cumulativeVolume = 0;
             
-            // 5. Check Feasibility
-            // If we have enough blocks to fill the gaps, OR if we simply need to wait (0 blocks needed)
-            if (blocksAvailable >= blocksNeeded) {
+            for(let k = 0; k < Math.min(fullStream.length, PLANNING_HORIZON); k++) {
+                const type = fullStream[k];
+                
+                // Can we Tetris with THIS piece?
+                // We need it to be an 'I' AND we need to have accrued enough volume from PREVIOUS pieces.
+                // Note: The volume of the piece *itself* isn't used to build the wall for *itself*.
+                if (type === 'I' && cumulativeVolume >= blocksNeeded) {
+                    targetIIndex = k;
+                    break;
+                }
+                
+                // Add this piece's volume for future checks
+                cumulativeVolume += 4;
+            }
+            
+            if (targetIIndex !== -1) {
                  mode = "PLOTTING";
             } else {
-                 // Not enough material to build the wall yet. Play efficient.
                  mode = "CALM";
             }
         }
@@ -1118,16 +1129,22 @@
         let piecesToLookAhead = [];
         
         if (mode === "PLOTTING") {
-             // Simulate exactly until the I piece to capture the full Tetris plan
-             // We cap at MAX_SIM_DEPTH. Since we checked PLANNING_HORIZON above, 
-             // we know iIndex < MAX_SIM_DEPTH approximately.
-             const sliceLimit = Math.min(iIndex + 1, MAX_SIM_DEPTH);
-             piecesToLookAhead = [piece.type, ...pieceQueue.slice(0, sliceLimit)];
+             // Simulate exactly up to the Target I Piece
+             // targetIIndex is relative to [current, ...queue]
+             // So if target is 0 (current), length is 1.
+             // Cap at MAX_SIM_DEPTH to prevent lag
+             const depth = Math.min(targetIIndex + 1, MAX_SIM_DEPTH);
+             const fullStream = [piece.type, ...pieceQueue];
+             piecesToLookAhead = fullStream.slice(0, depth);
              
-             // Safety: If capping removed the I-piece, fallback to calm
-             if (!piecesToLookAhead.includes("I")) {
-                 mode = "CALM";
-                 piecesToLookAhead = [piece.type, ...pieceQueue].slice(0, MAX_SIM_DEPTH);
+             // Sanity check: If we cut off before the I-piece, we can't execute the plan yet.
+             // Just play calmly or build efficiently.
+             if (piecesToLookAhead[piecesToLookAhead.length - 1] !== 'I') {
+                 // Actually, stick to PLOTTING weights (build mode) even if we can't see the finish line yet?
+                 // Yes, because "Building" is generally safe.
+                 // But check if we lost the I-piece entirely from view?
+                 // targetIIndex guarantees it's within PLANNING_HORIZON.
+                 // If MAX_SIM_DEPTH < targetIIndex, we just simulate building.
              }
         } else {
              // Standard behavior
@@ -1139,9 +1156,10 @@
              if (result) {
                  bestMove = result.firstMove;
                  
-                 // Smart Locking:
+                 // Smart Locking: Only lock if we confirm the Tetris is IMMINENT in this path
                  if (mode === "PLOTTING") {
-                     // Check max lines cleared in the *entire path* to verify Tetris
+                     // We only lock if the plan *finishes* the Tetris.
+                     // The beam search result tracks `maxLinesCleared`.
                      if (result.path.length > 1 && result.maxLinesCleared >= 4) {
                          lockedMoves = result.path.slice(1);
                          isLocked = true;
@@ -1151,7 +1169,7 @@
              }
         }
         
-        // Fallback if deep search failed
+        // Fallback
         if (!bestMove) {
              const moves = getValidMoves(grid, piece.type);
              let bestScore = -Infinity;
