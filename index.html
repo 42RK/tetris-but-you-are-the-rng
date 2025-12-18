@@ -309,7 +309,7 @@
        * - REMOVED Lookahead Limit: Now scans the ENTIRE queue.
        * - FIXED Beam Search Scoring: Swaps weights dynamically for the I-piece based on well depth.
        * - ADDED Pause functionality and rearranged controls.
-       * - FIXED Crash on large queues: Added simulation horizon (MAX_SIM_DEPTH = 20).
+       * - FIXED Crash on large queues: Added simulation horizon (MAX_SIM_DEPTH = 22).
        * - IMPROVED Local Fit: Added Row and Column Transition heuristics.
        * - GLOBAL Keydown: Keyboard works anywhere on page.
        * - UI UPDATE: Spacebar pause & "LOCKED IN" display.
@@ -318,6 +318,8 @@
        * - OPTIMIZATION: Memoized plan to prevent re-simulation lag on drop.
        * - UI FIX: Made Start Level and Reset visible on mobile.
        * - AI TUNING: Strict anti-waste policy in Build Mode.
+       * - AI FIX: Synced Planning Horizon (22) with Sim Depth (22) to prevent waste.
+       * - AI FIX: Added Volume Calculation logic to ensure build feasibility.
        */
 
       // --- Configuration ---
