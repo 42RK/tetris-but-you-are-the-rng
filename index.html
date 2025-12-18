@@ -3,6 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- Embed / Social Media Tags -->
+    <meta property="og:title" content="Tetris but you are the RNG function" />
+    <meta
+      property="og:description"
+      content="Tetris but you are the RNG function"
+    />
+    <meta property="og:type" content="website" />
+    <meta name="theme-color" content="#09090b" />
+
     <title>Tetris but you are the RNG function</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
@@ -22,14 +32,26 @@
       canvas {
         image-rendering: pixelated;
         max-width: 100%;
-        max-height: 80vh; /* Ensure it fits vertically on mobile */
+        /* Mobile: Restrict height to leave room for controls if needed */
+        max-height: 60vh;
         width: auto;
         height: auto;
         display: block;
       }
 
+      /* Desktop: Scaled to ~70% of the previous 90vh setting */
+      @media (min-width: 768px) {
+        canvas {
+          height: 63vh;
+          max-height: 63vh;
+          width: auto; /* Maintains aspect ratio */
+        }
+      }
+
+      /* Updated scrollbar for both vertical (queue) and horizontal if needed */
       .queue-scroll::-webkit-scrollbar {
         height: 4px;
+        width: 4px; /* Added width for vertical scrolling */
       }
       .queue-scroll::-webkit-scrollbar-track {
         background: #18181b;
@@ -65,15 +87,15 @@
         pointer-events: none; /* Let clicks pass to button */
       }
       .mini-cell {
-        width: 6px;
-        height: 6px;
+        width: 8px; /* Increased base size */
+        height: 8px; /* Increased base size */
         border-radius: 1px;
       }
       /* Mobile adjustment for tiny cells */
       @media (min-width: 768px) {
         .mini-cell {
-          width: 8px;
-          height: 8px;
+          width: 10px; /* Increased desktop size */
+          height: 10px; /* Increased desktop size */
         }
       }
 
@@ -93,7 +115,7 @@
     </style>
   </head>
   <body
-    class="h-screen w-screen flex flex-col md:flex-row items-center justify-center p-4 md:p-6 gap-6 md:gap-12"
+    class="h-screen w-screen flex flex-col md:flex-row items-center justify-center px-4 py-2 md:px-6 md:py-3 gap-6 md:gap-10"
   >
     <!-- Left: Game Area -->
     <div class="flex flex-col items-center gap-4 shrink-0">
@@ -159,6 +181,19 @@
                 0
               </div>
             </div>
+            <div>
+              <div
+                class="text-[10px] font-bold text-zinc-600 uppercase tracking-widest mt-2"
+              >
+                AI Mode
+              </div>
+              <div
+                id="aiStateDisplay"
+                class="text-xs text-blue-400 font-mono font-bold uppercase"
+              >
+                CALM
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -172,7 +207,8 @@
     </div>
 
     <!-- Right: Controls -->
-    <div class="flex flex-col w-full max-w-sm gap-4">
+    <!-- Changed max-w-sm to max-w-md for wider UI -->
+    <div class="flex flex-col w-full max-w-md gap-4">
       <!-- Level Select & Mobile Stats -->
       <div class="flex justify-between items-end">
         <!-- Mobile Stats -->
@@ -211,10 +247,11 @@
       </div>
 
       <!-- Queue Display -->
+      <!-- UPDATED: min-h instead of fixed height, allowing vertical growth up to a limit -->
       <div
-        class="bg-zinc-900/80 border border-zinc-800 p-3 rounded-sm h-28 flex flex-col shadow-inner"
+        class="bg-zinc-900/80 border border-zinc-800 p-3 rounded-sm min-h-[7rem] max-h-[40vh] flex flex-col shadow-inner transition-all duration-200"
       >
-        <div class="flex justify-between items-center mb-2">
+        <div class="flex justify-between items-center mb-2 shrink-0">
           <span
             class="text-[10px] font-bold text-zinc-600 uppercase tracking-widest"
             >Next Queue</span
@@ -222,9 +259,10 @@
           <span id="queueCount" class="text-[10px] text-zinc-500">0</span>
         </div>
 
+        <!-- UPDATED: flex-wrap to allow multiple rows, overflow-y-auto for vertical scrolling if needed -->
         <div
           id="visualQueue"
-          class="queue-scroll flex-1 flex gap-3 overflow-x-auto items-center px-1"
+          class="queue-scroll flex-1 flex flex-wrap gap-2 overflow-y-auto content-start px-1"
         >
           <div
             id="emptyQueueMsg"
@@ -255,13 +293,8 @@
       /**
        * Tetris: You are the RNG
        * * Updates:
-       * - Fixed canvas scaling with CSS max-width/height logic.
-       * - Unified 'MiniGrid' renderer for both buttons and queue items.
-       * - Added Leveling system (Speed increases with level).
-       * - Added Start Level selector.
-       * - FIXED: Canvas height set to 480 to prevent invisible rows.
-       * - FIXED: Reset logic correctly cancels old animation loops.
-       * - FIXED: Syntax error in initControls
+       * - Fixed Orange L-Piece definition (was missing a block).
+       * - Changed Queue to a wrapping grid that expands vertically.
        */
 
       // --- Configuration ---
@@ -314,7 +347,7 @@
           blocks: [
             [0, 0],
             [-1, 0],
-            [1, 0],
+            [1, 0], // FIXED: Added missing block
             [-1, 1],
           ],
           width: 3,
@@ -426,6 +459,9 @@
         updateUI();
         updateQueueUI();
         updateStatus("Waiting for Input");
+        document.getElementById("aiStateDisplay").innerText = "CALM";
+        document.getElementById("aiStateDisplay").className =
+          "text-xs text-blue-400 font-mono font-bold uppercase";
 
         // Start loop
         gameLoop();
@@ -478,8 +514,6 @@
         let offsetX = 1;
         let offsetY = 0;
 
-        // FIXED: I-piece was previously offset to 0, which clipped the block at x=-1.
-        // Now it uses the default offsetX=1, shifting the range [-1, 2] to [0, 3].
         if (type === "I") {
           offsetX = 1;
           offsetY = 0;
@@ -618,7 +652,6 @@
             currentPiece.rotationState = (currentPiece.rotationState + 1) % 4;
           } else {
             // If rotation failed (blocked), force skip to X movement to prevent infinite loop
-            // In a real scenario, this means AI plan is invalid, but we just fall through
           }
           return;
         }
@@ -713,12 +746,24 @@
         }
       }
 
-      // --- AI Evaluation ---
-      const WEIGHTS = {
-        aggregateHeight: -0.51,
+      // --- AI Evaluation System ---
+
+      // Calm: Standard play, efficient, tries to keep things low and flat
+      const BASE_WEIGHTS = {
+        aggregateHeight: -0.5,
         completeLines: 0.76,
-        holes: -0.36,
-        bumpiness: -0.18,
+        holes: -0.6, // High penalty to prevent swiss cheese with S/Z
+        bumpiness: -0.25, // Keep it relatively flat
+        wells: -0.15, // Slight penalty for deep 1-wide wells
+      };
+
+      // Panic: Board is too high! Burn lines at all costs!
+      const PANIC_WEIGHTS = {
+        aggregateHeight: -0.9, // Lower the board!
+        completeLines: 3.0, // BURN LINES NOW!
+        holes: -0.2, // Who cares about holes, we are dying!
+        bumpiness: -0.2,
+        wells: -0.1,
       };
 
       function findBestMove(grid, piece) {
@@ -726,6 +771,31 @@
         let bestMove = null;
         const rotations = piece.type === "O" ? 1 : 4;
 
+        // 1. Determine Board State (Calm vs Panic)
+        let maxHeight = 0;
+        for (let x = 0; x < COLS; x++) {
+          for (let y = 0; y < ROWS; y++) {
+            if (grid[y][x] !== 0) {
+              maxHeight = Math.max(maxHeight, ROWS - y);
+              break;
+            }
+          }
+        }
+
+        // Panic Threshold: 12 blocks high
+        const isPanic = maxHeight > 12;
+        const weights = isPanic ? PANIC_WEIGHTS : BASE_WEIGHTS;
+
+        // Update UI debug
+        const stateEl = document.getElementById("aiStateDisplay");
+        if (stateEl) {
+          stateEl.innerText = isPanic ? "PANIC" : "CALM";
+          stateEl.className = isPanic
+            ? "text-xs text-red-500 font-mono font-bold uppercase animate-pulse"
+            : "text-xs text-blue-400 font-mono font-bold uppercase";
+        }
+
+        // 2. Search Moves
         for (let r = 0; r < rotations; r++) {
           let shape = JSON.parse(JSON.stringify(piece.shape));
           for (let i = 0; i < r; i++) shape = shape.map(([x, y]) => [-y, x]);
@@ -746,7 +816,7 @@
               }
 
               if (validLock) {
-                const s = evaluateGrid(tempGrid);
+                const s = evaluateGrid(tempGrid, weights);
                 if (s > bestScore) {
                   bestScore = s;
                   bestMove = { rotation: r, x: x };
@@ -758,13 +828,15 @@
         return bestMove;
       }
 
-      function evaluateGrid(grid) {
+      function evaluateGrid(grid, weights) {
         let aggH = 0,
           lines = 0,
           holes = 0,
-          bump = 0;
+          bump = 0,
+          wells = 0;
         const heights = new Array(COLS).fill(0);
 
+        // Calculate Column Heights
         for (let x = 0; x < COLS; x++) {
           for (let y = 0; y < ROWS; y++) {
             if (grid[y][x] !== 0) {
@@ -775,10 +847,12 @@
         }
         aggH = heights.reduce((a, b) => a + b, 0);
 
+        // Count Lines
         for (let y = 0; y < ROWS; y++) {
           if (grid[y].every((c) => c !== 0)) lines++;
         }
 
+        // Count Holes
         for (let x = 0; x < COLS; x++) {
           let block = false;
           for (let y = 0; y < ROWS; y++) {
@@ -787,14 +861,30 @@
           }
         }
 
+        // Count Bumpiness
         for (let x = 0; x < COLS - 1; x++)
           bump += Math.abs(heights[x] - heights[x + 1]);
 
+        // Count Wells (Deep 1-wide valleys)
+        for (let x = 0; x < COLS; x++) {
+          const hLeft = x === 0 ? 20 : heights[x - 1];
+          const hRight = x === COLS - 1 ? 20 : heights[x + 1];
+          const h = heights[x];
+
+          if (h < hLeft && h < hRight) {
+            const depth = Math.min(hLeft, hRight) - h;
+            if (depth >= 2) {
+              wells += depth;
+            }
+          }
+        }
+
         return (
-          WEIGHTS.aggregateHeight * aggH +
-          WEIGHTS.completeLines * lines +
-          WEIGHTS.holes * holes +
-          WEIGHTS.bumpiness * bump
+          weights.aggregateHeight * aggH +
+          weights.completeLines * lines +
+          weights.holes * holes +
+          weights.bumpiness * bump +
+          (weights.wells || 0) * wells
         );
       }
 
