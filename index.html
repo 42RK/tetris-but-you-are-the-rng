@@ -307,7 +307,7 @@
        * - IMPROVED Local Fit: Added Row and Column Transition heuristics.
        * - GLOBAL Keydown: Keyboard works anywhere on page.
        * - UI UPDATE: Spacebar pause & "LOCKED IN" display.
-       * - FEATURE: "LOCKED IN" state persistence. Stores the plan!
+       * - FEATURE: "LOCKED IN" persistence with STRICT Tetris verification.
        */
 
       // --- Configuration ---
@@ -887,12 +887,13 @@
       }
 
       function beamSearch(initialGrid, pieceTypes, targetWellCol, currentMode) {
-        // Candidates: { grid, firstMove, score, path }
+        // Candidates: { grid, firstMove, score, path, maxLinesCleared }
         let candidates = [{ 
            grid: initialGrid, 
            firstMove: null,
-           path: [], // Store the full path of moves
-           score: -Infinity 
+           path: [], 
+           score: -Infinity,
+           maxLinesCleared: 0
         }];
 
         for (let i = 0; i < pieceTypes.length; i++) {
@@ -946,14 +947,20 @@
                 for (const move of moves) {
                     const score = evaluateGrid(move.grid, stepWeights, stepWellCol);
                     
-                    // Create the move object to store
+                    // Check for lines cleared in this step
+                    let linesInStep = 0;
+                    for(let r=0; r<ROWS; r++) {
+                        if (move.grid[r].every(c => c !== 0)) linesInStep++;
+                    }
+
                     const thisMove = { x: move.x, rotation: move.rotation };
 
                     nextCandidates.push({
                         grid: move.grid,
                         firstMove: i === 0 ? thisMove : cand.firstMove,
-                        path: [...cand.path, thisMove], // Append move to path
-                        score: cand.score !== -Infinity ? cand.score + score : score 
+                        path: [...cand.path, thisMove], 
+                        score: cand.score !== -Infinity ? cand.score + score : score,
+                        maxLinesCleared: Math.max(cand.maxLinesCleared, linesInStep)
                     });
                 }
             }
@@ -1089,14 +1096,12 @@
              if (result) {
                  bestMove = result.firstMove;
                  
-                 // IF PLOTTING and we found a valid path, LOCK IT IN!
                  if (mode === "PLOTTING") {
-                     // The path includes the current move as index 0.
-                     // We return index 0, and store 1..end in lockedMoves.
-                     if (result.path.length > 1) {
+                     // Check if path actually results in Tetris (>= 4 lines)
+                     if (result.path.length > 1 && result.maxLinesCleared >= 4) {
                          lockedMoves = result.path.slice(1);
                          isLocked = true;
-                         // UI update for immediate feedback
+                         // Force UI Update
                          if (stateEl) {
                              stateEl.innerText = "LOCKED IN";
                              stateEl.className = "text-xs text-purple-500 font-mono font-bold uppercase animate-pulse";
