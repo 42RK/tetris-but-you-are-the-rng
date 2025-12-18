@@ -326,8 +326,8 @@
       const BLOCK_SIZE = 24;
       const AI_THINK_DELAY = 50;
       const BEAM_WIDTH = 25; 
-      const MAX_SIM_DEPTH = 20; // Default tactical depth
-      const PLANNING_HORIZON = 30; // Max distance to look for a specific Tetris plan
+      const MAX_SIM_DEPTH = 22; // Synced with Planning Horizon
+      const PLANNING_HORIZON = 22; // Don't look further than we can simulate
 
       // Base speeds (ms per tick) mimicking NES curve somewhat adapted for AI animation
       // Level 0 is slow-ish, Level 9 is very snappy.
@@ -1062,28 +1062,43 @@
         const iIndex = pieceQueue.indexOf("I");
         
         // STRATEGY UPDATE:
-        // Only plot if the I-piece is within a realistic Planning Horizon.
-        // Trying to build for an I-piece 100 moves away is suicide (board fills up).
-        // We play CALM until the I-piece drifts into view (e.g. within 30 pieces).
+        // Only plot if the I-piece is within the Simulation Horizon.
         const hasLongboi = iIndex !== -1 && iIndex < PLANNING_HORIZON; 
         const isSafe = maxHeight < 14 && totalHoles < 5;
 
         if (isPanic) {
             mode = "PANIC";
         } else if (hasLongboi && isSafe) {
-            // Estimation Logic
-            let minWallHeight = ROWS;
+            // Precise Volume Estimation
+            // 1. Calculate the 'Ceiling' of the non-well columns (highest point)
+            let maxWallHeight = 0;
             for(let c=0; c<COLS; c++) {
-                if (c !== targetWellCol) minWallHeight = Math.min(minWallHeight, colHeights[c]);
+                if (c !== targetWellCol) maxWallHeight = Math.max(maxWallHeight, colHeights[c]);
             }
-            const currentWellDepth = minWallHeight - colHeights[targetWellCol];
-            const rowsNeeded = Math.max(0, 4 - currentWellDepth);
-            const blocksNeeded = rowsNeeded * 9; 
+            
+            // 2. We want to build a wall that is at least 4 blocks higher than the well bottom
+            //    BUT also flat. So we target max(maxWallHeight, wellHeight + 4).
+            const targetHeight = Math.max(maxWallHeight, colHeights[targetWellCol] + 4);
+            
+            // 3. Calculate empty space (volume needed) to make a solid rect up to targetHeight
+            let blocksNeeded = 0;
+            for(let c=0; c<COLS; c++) {
+                if (c !== targetWellCol) {
+                    // Space needed to reach target height from current height
+                    const needed = Math.max(0, targetHeight - colHeights[c]);
+                    blocksNeeded += needed;
+                }
+            }
+            
+            // 4. Blocks available in queue before I arrives
             const blocksAvailable = iIndex * 4;
             
-            if (rowsNeeded === 0 || blocksAvailable >= blocksNeeded) {
+            // 5. Check Feasibility
+            // If we have enough blocks to fill the gaps, OR if we simply need to wait (0 blocks needed)
+            if (blocksAvailable >= blocksNeeded) {
                  mode = "PLOTTING";
             } else {
+                 // Not enough material to build the wall yet. Play efficient.
                  mode = "CALM";
             }
         }
@@ -1102,18 +1117,15 @@
         
         if (mode === "PLOTTING") {
              // Simulate exactly until the I piece to capture the full Tetris plan
-             piecesToLookAhead = [piece.type, ...pieceQueue.slice(0, iIndex + 1)];
+             // We cap at MAX_SIM_DEPTH. Since we checked PLANNING_HORIZON above, 
+             // we know iIndex < MAX_SIM_DEPTH approximately.
+             const sliceLimit = Math.min(iIndex + 1, MAX_SIM_DEPTH);
+             piecesToLookAhead = [piece.type, ...pieceQueue.slice(0, sliceLimit)];
              
-             // Double check: If iIndex somehow exceeded our horizon (race condition), cap it.
-             // This prevents the AI from simulating 100 moves and freezing if logic slips.
-             if (piecesToLookAhead.length > PLANNING_HORIZON) {
-                 piecesToLookAhead = piecesToLookAhead.slice(0, PLANNING_HORIZON);
-                 // If we sliced off the I-piece, we can't execute the plan. Revert to standard search.
-                 // This shouldn't happen due to the hasLongboi check above, but safe guard:
-                 if (!piecesToLookAhead.includes("I")) {
-                     mode = "CALM"; // Abort plot if I is unreachable in sim
-                     piecesToLookAhead = [piece.type, ...pieceQueue].slice(0, MAX_SIM_DEPTH);
-                 }
+             // Safety: If capping removed the I-piece, fallback to calm
+             if (!piecesToLookAhead.includes("I")) {
+                 mode = "CALM";
+                 piecesToLookAhead = [piece.type, ...pieceQueue].slice(0, MAX_SIM_DEPTH);
              }
         } else {
              // Standard behavior
@@ -1126,11 +1138,9 @@
                  bestMove = result.firstMove;
                  
                  // Smart Locking:
-                 // Only lock if we are PLOTTING a tetris AND the plan actually achieves >= 4 lines cleared
                  if (mode === "PLOTTING") {
                      // Check max lines cleared in the *entire path* to verify Tetris
                      if (result.path.length > 1 && result.maxLinesCleared >= 4) {
-                         // Cache the plan!
                          lockedMoves = result.path.slice(1);
                          isLocked = true;
                          updateAIStatus("LOCKED IN", "text-purple-500");
