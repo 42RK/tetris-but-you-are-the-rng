@@ -203,26 +203,9 @@
     <!-- Right: Controls -->
     <!-- Changed max-w-sm to max-w-md for wider UI -->
     <div class="flex flex-col w-full max-w-md gap-4">
-      <!-- Level Select & Mobile Stats -->
-      <div class="flex justify-between items-end">
-        <!-- Mobile Stats -->
-        <div class="flex gap-4 md:hidden text-xs w-full">
-          <div>
-            <span class="text-zinc-600">LVL</span>
-            <span id="mobLevel" class="text-white">0</span>
-          </div>
-          <div>
-            <span class="text-zinc-600">LNS</span>
-            <span id="mobLines" class="text-white">0</span>
-          </div>
-          <!-- Added Mobile AI Mode Indicator -->
-          <div class="ml-auto">
-             <span class="text-zinc-600">AI:</span>
-             <span id="mobAiState" class="text-blue-400 font-mono font-bold uppercase">CALM</span>
-          </div>
-        </div>
-
-        <div class="flex items-center gap-2 ml-auto hidden md:flex">
+      
+      <!-- Top Bar: Level/Reset (Always visible, now flex row on mobile) -->
+      <div class="flex justify-end items-center gap-2 w-full">
           <!-- Reset Button Moved Here -->
           <button
             onclick="resetGame()"
@@ -250,7 +233,25 @@
             <option value="8">08</option>
             <option value="9">09</option>
           </select>
-        </div>
+      </div>
+
+      <!-- Mobile Stats Row -->
+      <div class="flex gap-4 md:hidden text-xs w-full justify-between items-end border-t border-zinc-800 pt-2">
+          <div class="flex gap-4">
+            <div>
+              <span class="text-zinc-600">LVL</span>
+              <span id="mobLevel" class="text-white">0</span>
+            </div>
+            <div>
+              <span class="text-zinc-600">LNS</span>
+              <span id="mobLines" class="text-white">0</span>
+            </div>
+          </div>
+          <!-- Mobile AI Mode Indicator -->
+          <div>
+             <span class="text-zinc-600">AI:</span>
+             <span id="mobAiState" class="text-blue-400 font-mono font-bold uppercase">CALM</span>
+          </div>
       </div>
 
       <!-- Queue Display -->
@@ -315,6 +316,7 @@
        * - FEATURE: "LOCKED IN" persistence with STRICT Tetris verification.
        * - UI FIX: Added AI Mode display for Mobile.
        * - OPTIMIZATION: Memoized plan to prevent re-simulation lag on drop.
+       * - UI FIX: Made Start Level and Reset visible on mobile.
        */
 
       // --- Configuration ---
