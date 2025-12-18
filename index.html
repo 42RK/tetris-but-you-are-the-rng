@@ -326,7 +326,8 @@
       const BLOCK_SIZE = 24;
       const AI_THINK_DELAY = 50;
       const BEAM_WIDTH = 25; 
-      const MAX_SIM_DEPTH = 20; // Refined limit for optimal performance vs planning
+      const MAX_SIM_DEPTH = 20; // Default tactical depth
+      const PLANNING_HORIZON = 30; // Max distance to look for a specific Tetris plan
 
       // Base speeds (ms per tick) mimicking NES curve somewhat adapted for AI animation
       // Level 0 is slow-ish, Level 9 is very snappy.
@@ -1016,17 +1017,6 @@
 
         // Check Locked Plan FIRST
         if (isLocked && lockedMoves.length > 0) {
-            // Check if queue has changed significantly (e.g. user added pieces that might offer better path?)
-            // Actually, if we are locked in, we stick to plan unless user ADDS pieces.
-            // But if user adds pieces, we might want to re-evaluate.
-            // HOWEVER, user requested to make it better at storing plans to avoid freezing.
-            // So we TRUST the plan unless the head of the queue doesn't match our expectation (which shouldn't happen)
-            // or if we finished the plan.
-            
-            // NOTE: Beam search path includes current piece. 
-            // So lockedMoves[0] corresponds to the NEXT piece in queue.
-            // We assume the game state follows the plan.
-            
             updateAIStatus("LOCKED IN", "text-purple-500");
             
             const next = lockedMoves.shift();
@@ -1070,8 +1060,12 @@
         
         const isPanic = maxHeight > 12;
         const iIndex = pieceQueue.indexOf("I");
-        // Look through ENTIRE queue now for STRATEGY
-        const hasLongboi = iIndex !== -1; 
+        
+        // STRATEGY UPDATE:
+        // Only plot if the I-piece is within a realistic Planning Horizon.
+        // Trying to build for an I-piece 100 moves away is suicide (board fills up).
+        // We play CALM until the I-piece drifts into view (e.g. within 30 pieces).
+        const hasLongboi = iIndex !== -1 && iIndex < PLANNING_HORIZON; 
         const isSafe = maxHeight < 14 && totalHoles < 5;
 
         if (isPanic) {
@@ -1104,15 +1098,22 @@
         }
 
         // 2. Perform Lookahead Beam Search
-        // We use the queue up to the I piece if PLOTTING, otherwise standard limited depth
         let piecesToLookAhead = [];
         
         if (mode === "PLOTTING") {
              // Simulate exactly until the I piece to capture the full Tetris plan
              piecesToLookAhead = [piece.type, ...pieceQueue.slice(0, iIndex + 1)];
-             // Cap strictly at something reasonable if queue is insanely long
-             if (piecesToLookAhead.length > 25) {
-                 piecesToLookAhead = piecesToLookAhead.slice(0, 25);
+             
+             // Double check: If iIndex somehow exceeded our horizon (race condition), cap it.
+             // This prevents the AI from simulating 100 moves and freezing if logic slips.
+             if (piecesToLookAhead.length > PLANNING_HORIZON) {
+                 piecesToLookAhead = piecesToLookAhead.slice(0, PLANNING_HORIZON);
+                 // If we sliced off the I-piece, we can't execute the plan. Revert to standard search.
+                 // This shouldn't happen due to the hasLongboi check above, but safe guard:
+                 if (!piecesToLookAhead.includes("I")) {
+                     mode = "CALM"; // Abort plot if I is unreachable in sim
+                     piecesToLookAhead = [piece.type, ...pieceQueue].slice(0, MAX_SIM_DEPTH);
+                 }
              }
         } else {
              // Standard behavior
@@ -1127,11 +1128,11 @@
                  // Smart Locking:
                  // Only lock if we are PLOTTING a tetris AND the plan actually achieves >= 4 lines cleared
                  if (mode === "PLOTTING") {
+                     // Check max lines cleared in the *entire path* to verify Tetris
                      if (result.path.length > 1 && result.maxLinesCleared >= 4) {
                          // Cache the plan!
                          lockedMoves = result.path.slice(1);
                          isLocked = true;
-                         lastQueueHash = currentQueueHash; 
                          updateAIStatus("LOCKED IN", "text-purple-500");
                      }
                  }
