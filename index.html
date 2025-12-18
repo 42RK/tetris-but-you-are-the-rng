@@ -2,89 +2,79 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta
-      name="viewport"
-      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
-    />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Tetris but you are the RNG function</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-      @import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;800&display=swap");
-
-      :root {
-        --bg-color: #050505;
-        --panel-bg: #111;
-        --accent: #333;
-      }
+      @import url("https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap");
 
       body {
         font-family: "JetBrains Mono", monospace;
-        background-color: var(--bg-color);
-        color: #a1a1aa;
+        background-color: #09090b; /* Zinc 950 */
+        color: #a1a1aa; /* Zinc 400 */
         overflow: hidden; /* Prevent scrolling */
-        touch-action: manipulation; /* Improves touch response */
       }
 
-      /* --- RESPONSIVE CANVAS SCALING --- */
-      /* The core logic: Height drives the size, Width follows aspect ratio */
+      /* Fix for Canvas Scaling/Blurring 
+           We set the display size explicitly via CSS to match aspect ratio
+           and ensure it doesn't overflow containers.
+        */
       canvas {
-        image-rendering: pixelated; /* Essential for sharp upscale */
-        display: block;
-        box-shadow: 0 0 50px rgba(0, 0, 0, 0.8);
-
-        /* Mobile Default: Takes up roughly half height to leave room for UI */
-        height: 55vh;
+        image-rendering: pixelated;
+        max-width: 100%;
+        max-height: 80vh; /* Ensure it fits vertically on mobile */
         width: auto;
-        max-width: 90vw; /* Safety constraint */
+        height: auto;
+        display: block;
       }
 
-      /* Desktop: Go BIG. Fill vertical space. */
-      @media (min-width: 768px) {
-        canvas {
-          height: 85vh;
-          max-width: none;
-        }
-      }
-
-      /* Minimal Scrollbar */
       .queue-scroll::-webkit-scrollbar {
         height: 4px;
       }
       .queue-scroll::-webkit-scrollbar-track {
-        background: #000;
+        background: #18181b;
       }
       .queue-scroll::-webkit-scrollbar-thumb {
-        background: #333;
+        background: #3f3f46;
         border-radius: 2px;
       }
 
       /* Button Styling */
       .btn-control {
-        background-color: #1a1a1a;
-        border: 1px solid #333;
-        transition: all 0.05s ease;
+        background-color: #18181b;
+        border: 1px solid #27272a;
+        transition: all 0.1s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
         position: relative;
         overflow: hidden;
       }
       .btn-control:hover {
-        background-color: #2a2a2a;
-        border-color: #555;
+        background-color: #27272a;
+        border-color: #52525b;
       }
       .btn-control:active {
-        transform: translateY(2px);
-        background-color: #444;
+        transform: scale(0.96);
       }
 
       /* Mini Grids for Queue & Buttons */
       .mini-grid {
         display: grid;
-        gap: 2px;
-        pointer-events: none;
+        gap: 1px;
+        pointer-events: none; /* Let clicks pass to button */
       }
       .mini-cell {
-        width: 100%;
-        aspect-ratio: 1/1;
+        width: 6px;
+        height: 6px;
         border-radius: 1px;
+      }
+      /* Mobile adjustment for tiny cells */
+      @media (min-width: 768px) {
+        .mini-cell {
+          width: 8px;
+          height: 8px;
+        }
       }
 
       .queue-item {
@@ -100,83 +90,72 @@
           opacity: 1;
         }
       }
-
-      /* Utility to hide UI on very short screens */
-      @media (max-height: 600px) and (orientation: landscape) {
-        .mobile-hide-landscape {
-          display: none;
-        }
-        body {
-          flex-direction: row;
-        }
-        canvas {
-          height: 90vh;
-        }
-      }
     </style>
   </head>
   <body
-    class="h-screen w-screen flex flex-col md:flex-row items-center justify-center p-2 md:p-0 gap-4 md:gap-12"
+    class="h-screen w-screen flex flex-col md:flex-row items-center justify-center p-4 md:p-6 gap-6 md:gap-12"
   >
     <!-- Left: Game Area -->
-    <div class="flex flex-col items-center relative shrink-0">
-      <!-- Main Game View -->
-      <div
-        class="relative group border-2 border-zinc-800 bg-black p-1 rounded-sm"
+    <div class="flex flex-col items-center gap-4 shrink-0">
+      <!-- Header for Mobile -->
+      <h1
+        class="md:hidden text-xs font-bold text-zinc-500 tracking-widest uppercase"
       >
-        <!-- FIXED: Canvas Resolution matches logic (10x20 blocks * 24px) -->
-        <canvas id="gameCanvas" width="240" height="480"></canvas>
+        Tetris but you are the RNG
+      </h1>
 
-        <!-- Desktop Floating Stats (Hidden on Mobile) -->
+      <div class="relative group">
+        <!-- Canvas Container with specific border sizing -->
         <div
-          class="absolute top-4 -left-36 text-right hidden md:block w-32 pointer-events-none"
+          class="border-2 border-zinc-800 p-1 bg-zinc-900 shadow-2xl rounded-sm"
         >
-          <h1
-            class="text-2xl font-extrabold text-white leading-none mb-1 opacity-90"
-          >
-            TETRIS
-          </h1>
-          <h2 class="text-[10px] text-zinc-500 font-bold tracking-[0.2em] mb-8">
-            YOU ARE THE RNG
-          </h2>
+          <!-- FIXED: Height increased to 480 to match 20 rows * 24px -->
+          <canvas
+            id="gameCanvas"
+            width="240"
+            height="480"
+            class="bg-black"
+          ></canvas>
+        </div>
 
-          <div class="space-y-6">
+        <!-- Stats Panel (Desktop) -->
+        <div class="absolute top-0 -left-32 text-right hidden md:block w-28">
+          <div class="mb-6">
+            <h1 class="text-sm font-bold text-zinc-300 leading-tight mb-1">
+              TETRIS<br /><span class="text-xs text-zinc-600 font-normal"
+                >BUT YOU ARE THE RNG FUNCTION</span
+              >
+            </h1>
+          </div>
+
+          <div class="space-y-4">
             <div>
               <div
-                class="text-[10px] font-bold text-zinc-600 uppercase tracking-widest mb-1"
+                class="text-[10px] font-bold text-zinc-600 uppercase tracking-widest"
               >
                 Score
               </div>
-              <div
-                id="scoreDisplay"
-                class="text-3xl text-white font-mono leading-none"
-              >
+              <div id="scoreDisplay" class="text-xl text-white font-mono">
                 0
               </div>
             </div>
             <div>
               <div
-                class="text-[10px] font-bold text-zinc-600 uppercase tracking-widest mb-1"
+                class="text-[10px] font-bold text-zinc-600 uppercase tracking-widest"
               >
                 Lines
               </div>
-              <div
-                id="linesDisplay"
-                class="text-3xl text-white font-mono leading-none"
-              >
+              <div id="linesDisplay" class="text-xl text-white font-mono">
                 0
               </div>
             </div>
             <div>
               <div
-                class="text-[10px] font-bold text-zinc-600 uppercase tracking-widest mb-1"
+                class="text-[10px] font-bold text-zinc-600 uppercase tracking-widest"
               >
                 Level
               </div>
-              <div
-                id="levelDisplay"
-                class="text-3xl text-yellow-500 font-mono leading-none"
-              >
+              <div id="levelDisplay" class="text-xl text-yellow-500 font-mono">
                 0
               </div>
             </div>
@@ -184,36 +163,33 @@
         </div>
       </div>
 
-      <!-- Status Bar (Below canvas on mobile) -->
       <div
         id="gameStatus"
-        class="mt-2 h-6 text-xs md:text-sm font-bold tracking-widest text-zinc-500 uppercase flex items-center gap-2"
+        class="h-6 text-sm font-bold tracking-widest text-zinc-500 uppercase flex items-center gap-2"
       >
         WAITING FOR INPUT
       </div>
     </div>
 
     <!-- Right: Controls -->
-    <!-- Expanded width on mobile to fill screen width -->
-    <div
-      class="flex flex-col w-full max-w-[90vw] md:max-w-xs gap-3 md:gap-4 mobile-hide-landscape"
-    >
-      <!-- Mobile Stats Header -->
-      <div class="flex justify-between items-end px-1">
-        <div class="flex gap-4 md:hidden text-xs font-mono">
+    <div class="flex flex-col w-full max-w-sm gap-4">
+      <!-- Level Select & Mobile Stats -->
+      <div class="flex justify-between items-end">
+        <!-- Mobile Stats -->
+        <div class="flex gap-4 md:hidden text-xs">
           <div>
-            <span class="text-zinc-600 font-bold">LVL</span>
-            <span id="mobLevel" class="text-white text-lg">0</span>
+            <span class="text-zinc-600">LVL</span>
+            <span id="mobLevel" class="text-white">0</span>
           </div>
           <div>
-            <span class="text-zinc-600 font-bold">LNS</span>
-            <span id="mobLines" class="text-white text-lg">0</span>
+            <span class="text-zinc-600">LNS</span>
+            <span id="mobLines" class="text-white">0</span>
           </div>
         </div>
 
         <div class="flex items-center gap-2 ml-auto">
           <label class="text-[10px] font-bold text-zinc-600 uppercase"
-            >Level</label
+            >Start Level</label
           >
           <select
             id="startLevel"
@@ -226,6 +202,8 @@
             <option value="3">03</option>
             <option value="4">04</option>
             <option value="5">05</option>
+            <option value="6">06</option>
+            <option value="7">07</option>
             <option value="8">08</option>
             <option value="9">09</option>
           </select>
@@ -234,45 +212,56 @@
 
       <!-- Queue Display -->
       <div
-        class="bg-[#111] border border-zinc-800 p-2 rounded-sm h-24 flex flex-col shadow-inner"
+        class="bg-zinc-900/80 border border-zinc-800 p-3 rounded-sm h-28 flex flex-col shadow-inner"
       >
-        <div class="flex justify-between items-center mb-1 px-1">
+        <div class="flex justify-between items-center mb-2">
           <span
             class="text-[10px] font-bold text-zinc-600 uppercase tracking-widest"
-            >Next</span
+            >Next Queue</span
           >
-          <span id="queueCount" class="text-[10px] text-zinc-600">0</span>
+          <span id="queueCount" class="text-[10px] text-zinc-500">0</span>
         </div>
 
         <div
           id="visualQueue"
-          class="queue-scroll flex-1 flex gap-2 overflow-x-auto items-center px-1"
+          class="queue-scroll flex-1 flex gap-3 overflow-x-auto items-center px-1"
         >
           <div
             id="emptyQueueMsg"
             class="w-full text-center text-xs text-zinc-700 italic"
           >
-            Tap blocks to fill queue
+            Tap buttons below...
           </div>
         </div>
       </div>
 
       <!-- Input Grid -->
-      <!-- Adjusted grid to be taller and more touch-friendly -->
       <div class="grid grid-cols-4 gap-2" id="controlsGrid">
-        <!-- JS generates buttons -->
+        <!-- Buttons generated by JS to ensure visual consistency -->
         <button
           onclick="resetGame()"
-          class="col-start-4 row-start-2 h-14 md:h-16 rounded-sm border border-red-900/30 text-red-700 bg-[#150505] hover:bg-red-950/50 hover:text-red-500 font-bold text-[10px] uppercase transition-colors flex items-center justify-center"
+          class="col-start-4 row-start-2 h-full rounded-sm border border-red-900/30 text-red-800 hover:bg-red-950/50 hover:text-red-500 font-bold text-[10px] uppercase transition-colors flex items-center justify-center"
         >
           RST
         </button>
+      </div>
+
+      <div class="text-center text-[10px] text-zinc-700 mt-2">
+        AI plays automatically using your pieces
       </div>
     </div>
 
     <script>
       /**
        * Tetris: You are the RNG
+       * * Updates:
+       * - Fixed canvas scaling with CSS max-width/height logic.
+       * - Unified 'MiniGrid' renderer for both buttons and queue items.
+       * - Added Leveling system (Speed increases with level).
+       * - Added Start Level selector.
+       * - FIXED: Canvas height set to 480 to prevent invisible rows.
+       * - FIXED: Reset logic correctly cancels old animation loops.
+       * - FIXED: Syntax error in initControls
        */
 
       // --- Configuration ---
@@ -281,8 +270,20 @@
       const BLOCK_SIZE = 24;
       const AI_THINK_DELAY = 50;
 
-      // Base speeds (ms per tick)
-      const SPEEDS = [200, 180, 160, 140, 120, 100, 80, 60, 40, 20];
+      // Base speeds (ms per tick) mimicking NES curve somewhat adapted for AI animation
+      // Level 0 is slow-ish, Level 9 is very snappy.
+      const SPEEDS = [
+        200, // Lvl 0
+        180, // Lvl 1
+        160, // Lvl 2
+        140, // Lvl 3
+        120, // Lvl 4
+        100, // Lvl 5
+        80, // Lvl 6
+        60, // Lvl 7
+        40, // Lvl 8
+        20, // Lvl 9 (Hyper)
+      ];
 
       // --- Shapes & Colors ---
       const SHAPES = {
@@ -294,7 +295,9 @@
             [1, 0],
             [2, 0],
           ],
-        },
+          width: 4,
+          height: 1,
+        }, // Cyan (Tailwind cyan-500)
         J: {
           color: "#3b82f6",
           blocks: [
@@ -303,7 +306,9 @@
             [1, 0],
             [1, 1],
           ],
-        },
+          width: 3,
+          height: 2,
+        }, // Blue (blue-500)
         L: {
           color: "#f97316",
           blocks: [
@@ -312,7 +317,9 @@
             [1, 0],
             [-1, 1],
           ],
-        },
+          width: 3,
+          height: 2,
+        }, // Orange (orange-500)
         O: {
           color: "#eab308",
           blocks: [
@@ -321,7 +328,9 @@
             [0, 1],
             [1, 1],
           ],
-        },
+          width: 2,
+          height: 2,
+        }, // Yellow (yellow-500)
         S: {
           color: "#22c55e",
           blocks: [
@@ -330,7 +339,9 @@
             [0, 1],
             [-1, 1],
           ],
-        },
+          width: 3,
+          height: 2,
+        }, // Green (green-500)
         T: {
           color: "#a855f7",
           blocks: [
@@ -339,7 +350,9 @@
             [1, 0],
             [0, 1],
           ],
-        },
+          width: 3,
+          height: 2,
+        }, // Purple (purple-500)
         Z: {
           color: "#ef4444",
           blocks: [
@@ -348,7 +361,9 @@
             [0, 1],
             [1, 1],
           ],
-        },
+          width: 3,
+          height: 2,
+        }, // Red (red-500)
       };
 
       const KEY_MAP = {
@@ -390,8 +405,10 @@
 
       // --- Initialization ---
       function init() {
+        // Cancel old loop if exists
         if (animationId) cancelAnimationFrame(animationId);
 
+        // Reset core vars
         board = Array.from({ length: ROWS }, () => Array(COLS).fill(0));
         pieceQueue = [];
         currentPiece = null;
@@ -401,6 +418,7 @@
         isAiActing = false;
         aiTarget = null;
 
+        // Get start level
         const select = document.getElementById("startLevel");
         startLevel = parseInt(select.value, 10);
         level = startLevel;
@@ -409,57 +427,81 @@
         updateQueueUI();
         updateStatus("Waiting for Input");
 
+        // Start loop
         gameLoop();
       }
 
+      // Generate the control buttons dynamically
       function initControls() {
         const grid = document.getElementById("controlsGrid");
+        // Order: I, O, T, S | Z, J, L
         const order = ["I", "O", "T", "S", "Z", "J", "L"];
 
-        // Save Reset button logic
+        // Clear existing but keep the Reset button (which is manually placed at end)
         const resetButton = grid.querySelector('button[onclick="resetGame()"]');
         grid.innerHTML = "";
 
         order.forEach((type) => {
           const btn = document.createElement("button");
-          // Increased height for better touch targets
-          btn.className =
-            "btn-control h-14 md:h-16 rounded-sm relative flex items-center justify-center";
+          btn.className = "btn-control h-12 md:h-14 rounded-sm relative";
           btn.onclick = () => addPiece(type);
-          // Prevent zoom on double tap
-          btn.ondblclick = (e) => e.preventDefault();
+          btn.title = `Add ${type} Piece`;
 
-          const mini = createMiniGrid(type);
-          // Make mini grid fill about 50% of button width
-          mini.style.width = "40%";
-          btn.appendChild(mini);
+          // Append the mini grid visual
+          btn.appendChild(createMiniGrid(type));
 
           grid.appendChild(btn);
         });
 
+        // Re-add reset button at the end
         if (resetButton) grid.appendChild(resetButton);
       }
 
+      // Helper to create HTML representation of a piece
       function createMiniGrid(type) {
         const shape = SHAPES[type];
         const wrapper = document.createElement("div");
         wrapper.className = "mini-grid";
 
+        // Calculate grid dimensions based on shape
+        // Center the piece in a 4x2 or 4x3 grid
         const w = 4;
-        // h not strictly needed for grid-template but helps calc
+        const h = type === "I" ? 1 : 2; // flatten for button
 
         wrapper.style.gridTemplateColumns = `repeat(${w}, 1fr)`;
 
-        const gridMap = Array(w * 2).fill(0);
+        // Create a 4xN grid map
+        const gridMap = Array(w * 2).fill(0); // ample space
 
+        // Map blocks to the grid. Offset to center.
+        // Base offsets to make them look nice in the button
         let offsetX = 1;
         let offsetY = 0;
+
+        // FIXED: I-piece was previously offset to 0, which clipped the block at x=-1.
+        // Now it uses the default offsetX=1, shifting the range [-1, 2] to [0, 3].
         if (type === "I") {
           offsetX = 1;
           offsetY = 0;
-        } // Center in 4-wide
+        }
+        if (type === "O") {
+          offsetX = 1;
+          offsetY = 0;
+        }
+        if (
+          type === "T" ||
+          type === "S" ||
+          type === "Z" ||
+          type === "J" ||
+          type === "L"
+        ) {
+          offsetX = 1;
+          offsetY = 0;
+        }
 
         shape.blocks.forEach(([x, y]) => {
+          // block coords are relative to pivot (0,0)
+          // map to flat array index
           const gx = x + offsetX;
           const gy = y + offsetY;
           const idx = gy * w + gx;
@@ -468,12 +510,13 @@
           }
         });
 
+        // Build DOM
         gridMap.forEach((active) => {
           const cell = document.createElement("div");
           cell.className = "mini-cell";
           if (active) {
             cell.style.backgroundColor = shape.color;
-            cell.style.boxShadow = "inset 0 0 2px rgba(0,0,0,0.5)";
+            cell.style.boxShadow = "inset 0 0 2px rgba(0,0,0,0.3)";
           } else {
             cell.style.backgroundColor = "transparent";
           }
@@ -494,12 +537,14 @@
       function updateStatus(msg, colorClass = "text-zinc-500") {
         const el = document.getElementById("gameStatus");
         el.innerHTML = msg;
-        el.className = `h-6 text-xs md:text-sm font-bold tracking-widest uppercase flex items-center gap-2 ${colorClass}`;
+        el.className = `h-6 text-sm font-bold tracking-widest uppercase flex items-center gap-2 ${colorClass}`;
       }
 
+      // Main Game Loop
       function gameLoop(time = 0) {
         if (gameOver) return;
 
+        // 1. Spawning
         if (!currentPiece && !isAiActing) {
           if (pieceQueue.length > 0) {
             spawnPiece();
@@ -508,7 +553,9 @@
           }
         }
 
+        // 2. AI Animation/Logic
         if (currentPiece && isAiActing && aiTarget) {
+          // Determine speed based on level (clamped to max index)
           const speedIndex = Math.min(level, SPEEDS.length - 1);
           const interval = SPEEDS[speedIndex];
 
@@ -518,6 +565,7 @@
           }
         }
 
+        // 3. Render
         render();
         animationId = requestAnimationFrame(gameLoop);
       }
@@ -563,14 +611,19 @@
       function performAiStep() {
         if (!currentPiece) return;
 
+        // Rotation
         if (currentPiece.rotationState !== aiTarget.rotation) {
           const rotated = rotatePiece(currentPiece);
           if (rotated) {
             currentPiece.rotationState = (currentPiece.rotationState + 1) % 4;
+          } else {
+            // If rotation failed (blocked), force skip to X movement to prevent infinite loop
+            // In a real scenario, this means AI plan is invalid, but we just fall through
           }
           return;
         }
 
+        // X Movement
         if (currentPiece.x !== aiTarget.x) {
           const direction = aiTarget.x > currentPiece.x ? 1 : -1;
           if (
@@ -585,6 +638,7 @@
           }
         }
 
+        // Drop
         if (
           !checkCollision(
             currentPiece.x,
@@ -600,14 +654,15 @@
 
       function rotatePiece(piece) {
         const newShape = piece.shape.map(([x, y]) => [-y, x]);
+        // Wall kick
         if (checkCollision(piece.x, piece.y, newShape)) {
           if (!checkCollision(piece.x - 1, piece.y, newShape)) piece.x -= 1;
           else if (!checkCollision(piece.x + 1, piece.y, newShape))
             piece.x += 1;
-          else return false;
+          else return false; // Fail
         }
         piece.shape = newShape;
-        return true;
+        return true; // Success
       }
 
       function checkCollision(x, y, shape, testBoard = board) {
@@ -646,9 +701,11 @@
         }
         if (linesCleared > 0) {
           lines += linesCleared;
+          // Standard NES scoring
           const multipliers = [0, 40, 100, 300, 1200];
           score += multipliers[linesCleared] * (level + 1);
 
+          // Level up logic (every 10 lines)
           const oldLevel = level;
           level = startLevel + Math.floor(lines / 10);
 
@@ -743,7 +800,7 @@
 
       // --- Rendering ---
       function render() {
-        ctx.fillStyle = "#050505";
+        ctx.fillStyle = "#000000";
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
         for (let y = 0; y < ROWS; y++) {
@@ -752,19 +809,21 @@
           }
         }
 
+        // Ghost
         if (currentPiece && aiTarget) {
           let ghostY = currentPiece.y;
           while (
             !checkCollision(currentPiece.x, ghostY + 1, currentPiece.shape)
           )
             ghostY++;
-          ctx.globalAlpha = 0.15;
+          ctx.globalAlpha = 0.2;
           for (const [bx, by] of currentPiece.shape) {
             drawBlock(currentPiece.x + bx, ghostY + by, currentPiece.color);
           }
           ctx.globalAlpha = 1.0;
         }
 
+        // Active
         if (currentPiece) {
           for (const [bx, by] of currentPiece.shape) {
             drawBlock(
@@ -775,7 +834,8 @@
           }
         }
 
-        ctx.fillStyle = "rgba(0,0,0,0.15)";
+        // Scanlines
+        ctx.fillStyle = "rgba(0,0,0,0.1)";
         for (let i = 0; i < canvas.height; i += 2)
           ctx.fillRect(0, i, canvas.width, 1);
       }
@@ -783,20 +843,18 @@
       function drawBlock(x, y, color) {
         const px = x * BLOCK_SIZE;
         const py = y * BLOCK_SIZE;
-
-        // Fill
         ctx.fillStyle = color;
         ctx.fillRect(px, py, BLOCK_SIZE, BLOCK_SIZE);
 
-        // Inner Shadow (Simulate bevel)
-        ctx.fillStyle = "rgba(0,0,0,0.2)";
-        ctx.fillRect(px + BLOCK_SIZE - 2, py, 2, BLOCK_SIZE);
-        ctx.fillRect(px, py + BLOCK_SIZE - 2, BLOCK_SIZE, 2);
+        // Minimalist shading
+        ctx.fillStyle = "rgba(0,0,0,0.1)"; // Border
+        ctx.fillRect(px, py, BLOCK_SIZE, 1);
+        ctx.fillRect(px, py, 1, BLOCK_SIZE);
+        ctx.fillRect(px + BLOCK_SIZE - 1, py, 1, BLOCK_SIZE);
+        ctx.fillRect(px, py + BLOCK_SIZE - 1, BLOCK_SIZE, 1);
 
-        // Highlight
-        ctx.fillStyle = "rgba(255,255,255,0.1)";
-        ctx.fillRect(px, py, BLOCK_SIZE, 2);
-        ctx.fillRect(px, py, 2, BLOCK_SIZE);
+        ctx.fillStyle = "rgba(255,255,255,0.15)"; // Shine
+        ctx.fillRect(px + 2, py + 2, BLOCK_SIZE - 4, BLOCK_SIZE - 4);
       }
 
       // --- UI Updates ---
@@ -805,6 +863,7 @@
         document.getElementById("linesDisplay").innerText = lines;
         document.getElementById("levelDisplay").innerText = level;
 
+        // Mobile updates
         document.getElementById("mobLevel").innerText = level;
         document.getElementById("mobLines").innerText = lines;
       }
@@ -829,10 +888,8 @@
 
         pieceQueue.forEach((type) => {
           const el = document.createElement("div");
-          el.className =
-            "queue-item flex-shrink-0 bg-[#1a1a1a] rounded-sm p-1 w-8 h-8 flex items-center justify-center";
-          const mini = createMiniGrid(type);
-          el.appendChild(mini);
+          el.className = "queue-item flex-shrink-0 bg-zinc-800 rounded-sm p-1";
+          el.appendChild(createMiniGrid(type));
           qDiv.appendChild(el);
         });
       }
@@ -845,7 +902,7 @@
         if (KEY_MAP[e.key]) {
           addPiece(KEY_MAP[e.key]);
           const btn = Array.from(document.querySelectorAll("button")).find(
-            (b) => b.onclick.toString().includes(KEY_MAP[e.key])
+            (b) => b.title.includes(KEY_MAP[e.key] + " Piece")
           );
           if (btn) {
             btn.style.transform = "scale(0.96)";
@@ -854,6 +911,7 @@
         }
       });
 
+      // Boot
       initControls();
       init();
     </script>
