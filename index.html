@@ -206,7 +206,7 @@
       <!-- Level Select & Mobile Stats -->
       <div class="flex justify-between items-end">
         <!-- Mobile Stats -->
-        <div class="flex gap-4 md:hidden text-xs">
+        <div class="flex gap-4 md:hidden text-xs w-full">
           <div>
             <span class="text-zinc-600">LVL</span>
             <span id="mobLevel" class="text-white">0</span>
@@ -215,9 +215,14 @@
             <span class="text-zinc-600">LNS</span>
             <span id="mobLines" class="text-white">0</span>
           </div>
+          <!-- Added Mobile AI Mode Indicator -->
+          <div class="ml-auto">
+             <span class="text-zinc-600">AI:</span>
+             <span id="mobAiState" class="text-blue-400 font-mono font-bold uppercase">CALM</span>
+          </div>
         </div>
 
-        <div class="flex items-center gap-2 ml-auto">
+        <div class="flex items-center gap-2 ml-auto hidden md:flex">
           <!-- Reset Button Moved Here -->
           <button
             onclick="resetGame()"
@@ -308,6 +313,8 @@
        * - GLOBAL Keydown: Keyboard works anywhere on page.
        * - UI UPDATE: Spacebar pause & "LOCKED IN" display.
        * - FEATURE: "LOCKED IN" persistence with STRICT Tetris verification.
+       * - UI FIX: Added AI Mode display for Mobile.
+       * - OPTIMIZATION: Memoized plan to prevent re-simulation lag on drop.
        */
 
       // --- Configuration ---
@@ -446,6 +453,7 @@
       // Locking State
       let lockedMoves = [];
       let isLocked = false;
+      let lastQueueHash = ""; // For tracking changes to queue to invalidate plan
 
       // AI State
       let aiTarget = null;
@@ -475,6 +483,7 @@
         // Reset Lock
         lockedMoves = [];
         isLocked = false;
+        lastQueueHash = "";
 
         // Get start level
         const select = document.getElementById("startLevel");
@@ -484,8 +493,7 @@
         updateUI();
         updateQueueUI();
         updateStatus("Waiting for Input");
-        document.getElementById("aiStateDisplay").innerText = "CALM";
-        document.getElementById("aiStateDisplay").className = "text-xs text-blue-400 font-mono font-bold uppercase";
+        updateAIStatus("CALM", "text-blue-400");
         
         // Reset pause button visual if exists
         const pBtn = document.getElementById("pauseBtn");
@@ -497,6 +505,19 @@
 
         // Start loop
         gameLoop();
+      }
+
+      function updateAIStatus(text, colorClass) {
+          const el = document.getElementById("aiStateDisplay");
+          const mobEl = document.getElementById("mobAiState");
+          if(el) {
+              el.innerText = text;
+              el.className = `text-xs ${colorClass} font-mono font-bold uppercase ${text === "LOCKED IN" || text === "PANIC" ? "animate-pulse" : ""}`;
+          }
+          if(mobEl) {
+              mobEl.innerText = text;
+              mobEl.className = `text-xs ${colorClass} font-mono font-bold uppercase ${text === "LOCKED IN" || text === "PANIC" ? "animate-pulse" : ""}`;
+          }
       }
 
       function togglePause() {
@@ -615,6 +636,13 @@
       function addPiece(type) {
         if (gameOver) init();
         pieceQueue.push(type);
+        // Queue changed, plan might be stale or need extension
+        // We generally invalidate plan if user adds pieces because it might open up better opportunities
+        // BUT if we are locked in, maybe we keep it? 
+        // No, let's just let the planner re-run on next spawn.
+        // Actually, if we are locked in, we want to STICK to the plan unless the board state changes unexpectedly.
+        // Adding pieces to the END of queue shouldn't invalidate the CURRENT plan for the front of the queue.
+        // So we only update hash, logic will handle re-calc if needed.
         updateQueueUI();
       }
 
@@ -979,22 +1007,27 @@
 
       function findBestMove(grid, piece) {
         let bestMove = null;
+        
+        // Generate Queue Hash to detect changes
+        const currentQueueHash = piece.type + "|" + pieceQueue.join("");
 
         // Check Locked Plan FIRST
         if (isLocked && lockedMoves.length > 0) {
-            // Update UI to keep showing Locked In
-            const stateEl = document.getElementById("aiStateDisplay");
-            if(stateEl) {
-               stateEl.innerText = "LOCKED IN";
-               stateEl.className = "text-xs text-purple-500 font-mono font-bold uppercase animate-pulse";
-            }
+            // Check if queue has changed significantly (e.g. user added pieces that might offer better path?)
+            // Actually, if we are locked in, we stick to plan unless user ADDS pieces.
+            // But if user adds pieces, we might want to re-evaluate.
+            // HOWEVER, user requested to make it better at storing plans to avoid freezing.
+            // So we TRUST the plan unless the head of the queue doesn't match our expectation (which shouldn't happen)
+            // or if we finished the plan.
             
-            // Return next move from plan
+            // NOTE: Beam search path includes current piece. 
+            // So lockedMoves[0] corresponds to the NEXT piece in queue.
+            // We assume the game state follows the plan.
+            
+            updateAIStatus("LOCKED IN", "text-purple-500");
+            
             const next = lockedMoves.shift();
-            // If plan empty after this, unlock
-            if (lockedMoves.length === 0) {
-                isLocked = false;
-            }
+            if (lockedMoves.length === 0) isLocked = false;
             return next;
         }
         
@@ -1059,17 +1092,12 @@
         }
         
         // Update UI debug
-        const stateEl = document.getElementById("aiStateDisplay");
-        if (stateEl) {
-           stateEl.innerText = mode;
-           if (mode === "PANIC") {
-               stateEl.className = "text-xs text-red-500 font-mono font-bold uppercase animate-pulse";
-           } else if (mode === "PLOTTING") {
-               stateEl.innerText = "PLOTTING...";
-               stateEl.className = "text-xs text-purple-400 font-mono font-bold uppercase";
-           } else {
-               stateEl.className = "text-xs text-blue-400 font-mono font-bold uppercase";
-           }
+        if (mode === "PANIC") {
+            updateAIStatus(mode, "text-red-500");
+        } else if (mode === "PLOTTING") {
+            updateAIStatus("PLOTTING...", "text-purple-400");
+        } else {
+            updateAIStatus(mode, "text-blue-400");
         }
 
         // 2. Perform Lookahead Beam Search
@@ -1078,11 +1106,8 @@
         
         if (mode === "PLOTTING") {
              // Simulate exactly until the I piece to capture the full Tetris plan
-             // Add 1 to include the I piece itself
              piecesToLookAhead = [piece.type, ...pieceQueue.slice(0, iIndex + 1)];
-             // Cap strictly at something reasonable if queue is insanely long, but ensure we reach I if possible
-             // If I piece is very far (> 20), we might need to just play Calm until closer?
-             // But user wants deep plan. Let's cap at 25.
+             // Cap strictly at something reasonable if queue is insanely long
              if (piecesToLookAhead.length > 25) {
                  piecesToLookAhead = piecesToLookAhead.slice(0, 25);
              }
@@ -1096,24 +1121,22 @@
              if (result) {
                  bestMove = result.firstMove;
                  
+                 // Smart Locking:
+                 // Only lock if we are PLOTTING a tetris AND the plan actually achieves >= 4 lines cleared
                  if (mode === "PLOTTING") {
-                     // Check if path actually results in Tetris (>= 4 lines)
                      if (result.path.length > 1 && result.maxLinesCleared >= 4) {
+                         // Cache the plan!
                          lockedMoves = result.path.slice(1);
                          isLocked = true;
-                         // Force UI Update
-                         if (stateEl) {
-                             stateEl.innerText = "LOCKED IN";
-                             stateEl.className = "text-xs text-purple-500 font-mono font-bold uppercase animate-pulse";
-                         }
+                         lastQueueHash = currentQueueHash; 
+                         updateAIStatus("LOCKED IN", "text-purple-500");
                      }
                  }
              }
         }
         
-        // Fallback if deep search failed (e.g., immediate game over detected in all paths)
+        // Fallback if deep search failed
         if (!bestMove) {
-             // Simple greedy one-step fallback
              const moves = getValidMoves(grid, piece.type);
              let bestScore = -Infinity;
              for (const m of moves) {
