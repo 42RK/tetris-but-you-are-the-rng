@@ -317,6 +317,7 @@
        * - UI FIX: Added AI Mode display for Mobile.
        * - OPTIMIZATION: Memoized plan to prevent re-simulation lag on drop.
        * - UI FIX: Made Start Level and Reset visible on mobile.
+       * - AI TUNING: Strict anti-waste policy in Build Mode.
        */
 
       // --- Configuration ---
@@ -851,15 +852,15 @@
         colTransitions: -0.2
       };
       
-      // Tetris Build: Stacking up!
+      // Tetris Build: Stacking up! STRICT anti-waste
       const TETRIS_BUILD_WEIGHTS = {
         aggregateHeight: 0.0, 
-        completeLines: -4.0,  // Penalty: DO NOT burn lines with non-I pieces
+        completeLines: -30.0,  // EXTREME Penalty: Do NOT burn lines while building
         holes: -0.8,          // Be very clean
         bumpiness: -0.3,      // Slightly stronger bumpiness check
         flatness: -0.3,       // Relaxed flatness to allow "building up" with L/J
         wells: 0.0,           
-        wellPreservation: -12.0, // Huge penalty for covering the target well
+        wellPreservation: -20.0, // Severe penalty for covering the target well
         rowTransitions: -0.6, // VERY Strict solidity needed
         colTransitions: -0.6
       };
